@@ -7,24 +7,24 @@ router = APIRouter()
 
 @router.get("/search")
 async def search(
-    q: str = Query(..., min_length=1), 
+    query: str = Query(..., min_length=1), 
     user: dict = Depends(optional_user),
     x_quality: str = Header("medium")
 ):
     """Search for everything (songs, artists, etc.)."""
     if user:
-        db_ops.record_search(user["uid"], q)
-    return search_all(q)
+        db_ops.record_search(user["uid"], query)
+    return search_all(query)
 
 @router.get("/search/songs")
 async def search_for_songs(
-    q: str = Query(..., min_length=1), 
+    query: str = Query(..., min_length=1), 
     page: int = 1, 
     limit: int = 20,
     x_quality: str = Header("medium")
 ):
     """Search for songs only with quality optimization."""
-    results = search_songs(q, page, limit)
+    results = search_songs(query, page, limit)
     
     if results.get("source") == "cache":
         return results
