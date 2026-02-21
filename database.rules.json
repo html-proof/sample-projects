@@ -1,0 +1,60 @@
+{
+    "rules": {
+        "users": {
+            "$uid": {
+                ".read": "$uid === auth.uid",
+                ".write": "$uid === auth.uid",
+                "profile": {
+                    ".read": "auth != null && $uid === auth.uid",
+                    ".write": "auth != null && $uid === auth.uid"
+                },
+                "languages": {
+                    ".read": "auth != null && $uid === auth.uid",
+                    ".write": "auth != null && $uid === auth.uid"
+                },
+                "followed_artists": {
+                    ".read": "auth != null && $uid === auth.uid",
+                    ".write": "auth != null && $uid === auth.uid"
+                },
+                "liked_songs": {
+                    ".read": "auth != null && $uid === auth.uid",
+                    ".write": "auth != null && $uid === auth.uid"
+                },
+                "recently_played": {
+                    ".read": "auth != null && $uid === auth.uid",
+                    ".write": "auth != null && $uid === auth.uid"
+                },
+                "recommendations": {
+                    ".read": "auth != null && $uid === auth.uid",
+                    ".write": "auth != null && $uid === auth.uid"
+                }
+            }
+        },
+        "playlists": {
+            ".read": "auth != null",
+            "$playlistId": {
+                ".write": "auth != null && (!data.exists() || data.child('owner').val() === auth.uid || newData.child('owner').val() === auth.uid)"
+            }
+        },
+        "songs": {
+            ".read": "auth != null",
+            ".write": "false"
+        },
+        "search_cache": {
+            ".read": "auth != null",
+            ".write": "false"
+        },
+        "trending": {
+            ".read": "true",
+            ".write": "false"
+        },
+        "suggestions": {
+            ".read": "true",
+            ".write": "false"
+        },
+        "analytics": {
+            ".read": "auth != null",
+            ".write": "false"
+        }
+    }
+}
