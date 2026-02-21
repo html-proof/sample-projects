@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Header
 from middleware.auth import optional_user
 from recommender.engine import get_recommendations
 from firebase.db_ops import (
@@ -10,7 +10,7 @@ from services.saavn import get_top_artists_by_language, get_song, slim_song, sea
 router = APIRouter()
 
 @router.get("/home")
-async def home_feed(user: dict = Depends(optional_user)):
+async def home_feed(user: dict = Depends(optional_user), x_quality: str = Header("medium")):
     """Consolidated home feed based on user preferences and activity."""
     if not user:
         # Generic feed for guest users
@@ -26,7 +26,7 @@ async def home_feed(user: dict = Depends(optional_user)):
             try:
                 s = get_song(tid)
                 if s.get("data"):
-                    songs.append(slim_song(s["data"][0]))
+                    songs.append(slim_song(s["data"][0], quality=x_quality))
             except: continue
         
         # Fallback: if no trending data, fetch popular songs from Saavn
@@ -36,7 +36,7 @@ async def home_feed(user: dict = Depends(optional_user)):
                 if isinstance(fallback, dict) and "data" in fallback:
                     data = fallback["data"]
                     results = data.get("results", []) if isinstance(data, dict) else []
-                    songs = [slim_song(s) for s in results[:10]]
+                    songs = [slim_song(s, quality=x_quality) for s in results[:10]]
             except: pass
             
         return {
@@ -52,7 +52,7 @@ async def home_feed(user: dict = Depends(optional_user)):
     languages = get_user_languages(user_id)
     
     # 1. Personalized Recommendations (Serves stored or generates)
-    recs = get_recommendations(user_id, limit=10)
+    recs = get_recommendations(user_id, limit=10, quality=x_quality)
     
     # 2. Recently Played
     recent_ids = get_user_recently_played(user_id, limit=10)

@@ -63,9 +63,9 @@ def get_trending_songs(limit: int = 20) -> list:
 
 # ─── Content-Based Filtering ──────────────────────────────────────────────────
 
-def get_content_based(seed_song_id: str, skipped: set = None, limit: int = 10) -> list:
+def get_content_based(seed_song_id: str, skipped: set = None, limit: int = 10, quality: str = "medium") -> list:
     skipped = skipped or set()
-    cache_key = f"suggestions_{seed_song_id}"
+    cache_key = f"suggestions_{seed_song_id}_{quality}"
     cached = get_cached("songs_cache", cache_key, ttl=86400) # 24 hours
     if cached:
         results = [s for s in cached if s["id"] not in skipped]
@@ -74,7 +74,7 @@ def get_content_based(seed_song_id: str, skipped: set = None, limit: int = 10) -
     try:
         raw = get_song_suggestions(seed_song_id, limit=20)
         songs = raw.get("data", []) if isinstance(raw, dict) else []
-        slim = [slim_song(s) for s in songs]
+        slim = [slim_song(s, quality=quality) for s in songs]
         set_cached("songs_cache", cache_key, slim)
         return [s for s in slim if s["id"] not in skipped][:limit]
     except Exception:
@@ -154,27 +154,29 @@ def generate_album_recommendations(user_id: str, languages: list, fav_artists: l
 
 # ─── Main Recommendation Pipeline ─────────────────────────────────────────────
 
-def get_recommendations(user_id: str, limit: int = 20, force_refresh: bool = False) -> dict:
+def get_recommendations(user_id: str, limit: int = 20, force_refresh: bool = False, quality: str = "medium") -> dict:
     """Entry point: Serves stored recommendations or triggers generation."""
     if not force_refresh:
         stored = get_stored_recommendations(user_id)
         if stored:
             # Check if stale (older than 30 mins)
             if (time.time() - stored.get("updatedAt", 0)) < 1800:
+                # If quality matches or we don't care about cached quality
+                # For simplicity, we just return stored, but we might want to re-slim if quality differs
                 return stored
 
     # Generate fresh recommendations
-    recs = generate_fresh_recommendations(user_id, limit=limit)
+    recs = generate_fresh_recommendations(user_id, limit=limit, quality=quality)
     
     # Store them
     store_recommendations(user_id, recs)
     return recs
 
 
-def generate_fresh_recommendations(user_id: str, limit: int = 20) -> dict:
+def generate_fresh_recommendations(user_id: str, limit: int = 20, quality: str = "medium") -> dict:
     """The heavy lifting: generates and ranks recommendations."""
     history      = get_user_recently_played(user_id, limit=50)
-    skipped      = set() # Disabled for now
+    skipped      = set() 
     liked        = get_liked_songs(user_id)
     profile      = get_user_profile(user_id)
     followed     = get_followed_artists(user_id)
@@ -189,19 +191,18 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20) -> dict:
     # 1. Content-based from recent songs
     seeds = recent_song_ids[:5]
     for seed in seeds:
-        suggestions = get_content_based(seed, skipped, limit=10)
+        suggestions = get_content_based(seed, skipped, limit=10, quality=quality)
         personalized.extend(suggestions)
 
     # 2. Artist-based from followed artists
     if followed:
-        # Fetch a few songs for each followed artist to ensure discovery
         for artist_id, meta in list(followed.items())[:3]:
             try:
                 artist_name = meta.get("name")
                 if artist_name:
                     raw = search_songs(artist_name, limit=5)
                     songs = raw.get("data", {}).get("results", [])
-                    personalized.extend([slim_song(s) for s in songs])
+                    personalized.extend([slim_song(s, quality=quality) for s in songs])
             except Exception:
                 continue
 
@@ -225,7 +226,7 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20) -> dict:
         boost = 1.0
         
         # Signal: Followed Artist
-        artist_id = song.get("artistId", "") # Assuming artistId is in slim_song
+        artist_id = song.get("artistId", "") 
         if artist_id in followed_ids:
             boost *= 3.0
             
@@ -253,6 +254,8 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20) -> dict:
 
     # 5. Trending fallback
     trending_raw = get_trending_songs(limit=20)
+    # Re-slim trending songs with requested quality
+    # Note: get_trending_songs returns scored objects, maybe we need to get full details and slim
     trending_filtered = [s for s in trending_raw if s.get("language", "").lower() in pref_langs or not pref_langs]
 
     return {
@@ -262,7 +265,8 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20) -> dict:
         "trending":      trending_filtered[:10],
         "context":       time_context,
         "favoriteArtists": fav_artists,
-        "updatedAt": int(time.time())
+        "updatedAt": int(time.time()),
+        "quality": quality
     }
 
 

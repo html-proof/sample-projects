@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Header
 from recommender.engine import (
     get_recommendations, build_smart_queue,
     generate_daily_mix, get_trending_songs
@@ -12,9 +12,10 @@ router = APIRouter()
 async def recommendations(
     currentSong: str = Query(None),
     limit: int = Query(20, le=50),
-    user=Depends(get_current_user)
+    user=Depends(get_current_user),
+    x_quality: str = Header("medium")
 ):
-    result = get_recommendations(user["uid"], current_song_id=currentSong, limit=limit)
+    result = get_recommendations(user["uid"], current_song_id=currentSong, limit=limit, quality=x_quality)
     return result
 
 

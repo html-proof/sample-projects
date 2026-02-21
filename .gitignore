@@ -16,3 +16,10 @@ user_centric_output.log
 full_output.log
 verify_onboarding.py
 verify_user_centric.py
+
+# Mobile App
+mobile_app/
+
+# Artifacts
+.gemini/
+analysis_*.json

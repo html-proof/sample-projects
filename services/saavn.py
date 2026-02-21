@@ -119,19 +119,34 @@ def get_playlist(playlist_id: str, page: int = 1) -> dict:
 
 # ─── Data Transformation ─────────────────────────────────────────────────────
 
-def slim_song(song: dict) -> dict:
-    """Return minimal song data for mobile-friendly responses."""
-    image = song.get("image", [])
-    small_img = image[0].get("url", "") if image else ""
-    download = song.get("downloadUrl", [])
-    stream_url = download[-1].get("url", "") if download else ""
+def slim_song(song: dict, quality: str = "medium") -> dict:
+    """Return minimal song data for mobile-friendly responses.
+    quality: 'low', 'medium', 'high'
+    """
+    images = song.get("image", [])
+    # Low: smallest image, High: largest image
+    if quality == "low":
+        img = images[0].get("url", "") if images else ""
+    elif quality == "high":
+        img = images[-1].get("url", "") if images else ""
+    else:
+        img = images[1].get("url", "") if len(images) > 1 else (images[0].get("url", "") if images else "")
+
+    downloads = song.get("downloadUrl", [])
+    # bitrates: 0=12kbps, 1=48kbps, 2=96kbps, 3=160kbps, 4=320kbps (approx)
+    if quality == "low":
+        stream_url = downloads[1].get("url", "") if len(downloads) > 1 else (downloads[0].get("url", "") if downloads else "")
+    elif quality == "high":
+        stream_url = downloads[-1].get("url", "") if downloads else ""
+    else:
+        stream_url = downloads[2].get("url", "") if len(downloads) > 2 else (downloads[-1].get("url", "") if downloads else "")
 
     return {
         "id":        song.get("id", ""),
         "title":     song.get("name", ""),
         "artist":    ", ".join(a.get("name", "") for a in song.get("artists", {}).get("primary", [])),
         "album":     song.get("album", {}).get("name", ""),
-        "image":     small_img,
+        "image":     img,
         "duration":  song.get("duration", 0),
         "language":  song.get("language", ""),
         "year":      song.get("year", ""),
