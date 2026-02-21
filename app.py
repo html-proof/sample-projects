@@ -47,6 +47,20 @@ app.include_router(onboarding.router,      prefix="/api", tags=["Onboarding"])
 app.include_router(home.router,            prefix="/api", tags=["Home"])
 
 
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to the Music Streaming API",
+        "health_check": "/health",
+        "documentation": "/docs",
+        "api_endpoints": {
+            "home": "/api/home",
+            "search": "/api/search",
+            "onboarding": "/api/onboarding/languages"
+        }
+    }
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "music-streaming-api"}
