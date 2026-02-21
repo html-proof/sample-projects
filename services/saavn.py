@@ -264,6 +264,65 @@ def get_album(album_id: str) -> dict:
 def get_artist(artist_id: str) -> dict:
     return _request(f"/api/artists/{artist_id}")
 
+def get_artist_full_details(artist_id: str, quality: str = "medium") -> dict:
+    """Fetch artist bio, top songs, and albums and slim them."""
+    try:
+        # Fetch base artist info
+        raw_artist = get_artist(artist_id)
+        if not raw_artist or not raw_artist.get("data"):
+            return {"success": False, "message": "Artist not found"}
+        
+        artist_data = raw_artist["data"]
+        slimmed_artist = slim_artist(artist_data, quality=quality)
+        
+        # Add bio/description if available
+        slimmed_artist["bio"] = artist_data.get("description", "") or artist_data.get("bio", "")
+        
+        # Fetch top songs
+        raw_songs = get_artist_songs(artist_id)
+        songs = []
+        if raw_songs and "data" in raw_songs and "songs" in raw_songs["data"]:
+            songs = [slim_song(s, quality=quality) for s in raw_songs["data"]["songs"]]
+            
+        # Fetch albums
+        raw_albums = get_artist_albums(artist_id)
+        albums = []
+        if raw_albums and "data" in raw_albums and "albums" in raw_albums["data"]:
+            albums = [slim_album(a, quality=quality) for a in raw_albums["data"]["albums"]]
+            
+        return {
+            "success": True,
+            "artist": slimmed_artist,
+            "songs": songs[:20],  # Top 20 songs
+            "albums": albums[:10]   # Top 10 albums
+        }
+    except Exception as e:
+        print(f"Error fetching artist full details: {e}")
+        return {"success": False, "message": str(e)}
+
+def get_album_full_details(album_id: str, quality: str = "medium") -> dict:
+    """Fetch album info and its songs."""
+    try:
+        raw_album = get_album(album_id)
+        if not raw_album or not raw_album.get("data"):
+            return {"success": False, "message": "Album not found"}
+            
+        album_data = raw_album["data"]
+        slimmed_album = slim_album(album_data, quality=quality)
+        
+        # Extract songs - they are often inside the album data in JioSaavn API
+        songs_raw = album_data.get("songs", [])
+        songs = [slim_song(s, quality=quality) for s in songs_raw]
+        
+        return {
+            "success": True,
+            "album": slimmed_album,
+            "songs": songs
+        }
+    except Exception as e:
+        print(f"Error fetching album full details: {e}")
+        return {"success": False, "message": str(e)}
+
 
 def get_artist_songs(artist_id: str, page: int = 0, sort: str = "latest") -> dict:
     return _request(f"/api/artists/{artist_id}/songs?page={page}&sortBy={sort}")

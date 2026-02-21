@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter, Depends, Query, HTTPException
 from middleware.auth import get_current_user
 from firebase import db_ops
+from services.saavn import get_playlist as get_saavn_playlist, slim_song
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -43,3 +44,30 @@ async def add_to_playlist(id: str, data: PlaylistAddSong, user: dict = Depends(g
     
     db_ops.playlist_add_song(id, data.songId)
     return {"status": "success", "message": "Song added to playlist"}
+
+@router.get("/playlists/{id}/songs")
+async def playlist_songs(id: str, x_quality: str = Header("medium")):
+    """Gets songs for a specific playlist (user or Saavn)."""
+    # 1. Try User Playlist
+    playlist = db_ops.playlist_get(id)
+    if playlist:
+        songs = db_ops.playlist_get_songs(id)
+        return {
+            "name": playlist.get("name"),
+            "songs": [slim_song(s, quality=x_quality) for s in songs]
+        }
+    
+    # 2. Try Saavn Playlist
+    try:
+        res = get_saavn_playlist(id)
+        if res and "data" in res:
+            data = res["data"]
+            return {
+                "name": data.get("name"),
+                "image": data.get("image", [{}])[-1].get("url", ""),
+                "songs": [slim_song(s, quality=x_quality) for s in data.get("songs", [])]
+            }
+    except:
+        pass
+        
+    raise HTTPException(status_code=404, detail="Playlist not found")

@@ -204,6 +204,20 @@ def playlist_add_song(playlist_id: str, song_id: str):
     set_val(f"playlists/{playlist_id}/songs/{song_id}", True)
 
 
+def playlist_get_songs(playlist_id: str) -> list:
+    """Retrieves and rehydrates songs in a playlist."""
+    playlist = playlist_get(playlist_id)
+    if not playlist or "songs" not in playlist:
+        return []
+        
+    song_ids = playlist["songs"].keys()
+    results = []
+    for sid in song_ids:
+        song_meta = get(f"songs/{sid}")
+        if song_meta:
+            results.append(song_meta)
+    return results
+
 def get_user_playlists(user_id: str) -> list:
     """Retrieves all playlists owned by a user."""
     # This is an O(N) operation in Firebase RTDB without indexing. 
