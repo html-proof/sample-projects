@@ -5,6 +5,8 @@ import urllib.parse
 from typing import Optional
 import os
 import base64
+import gzip
+import io
 from firebase import db_ops
 
 SAAVN_HOST = os.getenv("SAAVN_HOST", "saavn.sumit.co")
@@ -13,11 +15,24 @@ JIOSAAVN_DES_KEY = b"38346591"  # JioSaavn's known DES key for URL decryption
 
 def _request(path: str) -> dict:
     conn = http.client.HTTPSConnection(SAAVN_HOST)
-    conn.request("GET", path, headers={"Accept": "application/json"})
+    headers = {
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip"
+    }
+    conn.request("GET", path, headers=headers)
     res = conn.getresponse()
-    raw = res.read().decode("utf-8")
+    
+    encoding = res.getheader("Content-Encoding")
+    raw_data = res.read()
+    
+    if encoding == "gzip":
+        with gzip.GzipFile(fileobj=io.BytesIO(raw_data)) as f:
+            data = f.read().decode("utf-8")
+    else:
+        data = raw_data.decode("utf-8")
+        
     conn.close()
-    return json.loads(raw)
+    return json.loads(data)
 
 
 def _encode(q: str) -> str:
@@ -87,7 +102,9 @@ def _search_jiosaavn_direct(query: str, limit: int = 10) -> list:
             encrypted = item.get("encrypted_media_url", "")
             stream_url = _decrypt_url(encrypted) if encrypted else ""
             
-            # Force 320kbps if possible
+            # Force bitrates based on "quality" if we had it here, 
+            # but usually direct search is called for a specific query.
+            # We'll default to 320 for the cache, and slim_song will downgrade later.
             if stream_url and "_96." in stream_url:
                 stream_url = stream_url.replace("_96.", "_320.")
             elif stream_url and "_160." in stream_url:
@@ -99,7 +116,7 @@ def _search_jiosaavn_direct(query: str, limit: int = 10) -> list:
                 if len(parts) > 1:
                     stream_url = "https://aac.saavncdn.com/" + parts[1]
                     
-            # Build image URL
+            # Build image URL - keep original 500x500 for storage
             image = item.get("image", "")
             if isinstance(image, str) and image:
                 image = image.replace("150x150", "500x500").replace("50x50", "500x500")
@@ -287,6 +304,12 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     else:
         img = ""
 
+    # Dynamic Image Sizing: If quality is low, use 150x150 instead of 500x500
+    if img and quality == "low":
+        img = img.replace("500x500", "150x150")
+    elif img and (quality == "medium" or quality == "high"):
+        img = img.replace("150x150", "500x500")
+
     downloads = song.get("downloadUrl", [])
     if isinstance(downloads, list) and downloads:
         # bitrates: 0=12kbps, 1=48kbps, 2=96kbps, 3=160kbps, 4=320kbps (approx)
@@ -342,9 +365,16 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     }
 
 
-def slim_artist(artist: dict) -> dict:
+def slim_artist(artist: dict, quality: str = "medium") -> dict:
     image = artist.get("image", [])
     img = image[-1].get("url", "") if image else ""
+    
+    # Dynamic Image Sizing
+    if img and quality == "low":
+        img = img.replace("500x500", "150x150").replace("450x450", "150x150")
+    elif img and (quality == "medium" or quality == "high"):
+        img = img.replace("150x150", "500x500").replace("50x50", "500x500")
+
     return {
         "id":       artist.get("id", ""),
         "name":     html.unescape(artist.get("name", "")),
@@ -354,12 +384,18 @@ def slim_artist(artist: dict) -> dict:
     }
 
 
-def slim_album(album: dict) -> dict:
+def slim_album(album: dict, quality: str = "medium") -> dict:
     image = album.get("image", [])
     img = image[-1].get("url", "") if image else ""
     artist_data = album.get("artists", {}).get("primary", [])
     artist_name = ", ".join(a.get("name", "") for a in artist_data) if artist_data else ""
     
+    # Dynamic Image Sizing
+    if img and quality == "low":
+        img = img.replace("500x500", "150x150").replace("450x450", "150x150")
+    elif img and (quality == "medium" or quality == "high"):
+        img = img.replace("150x150", "500x500").replace("50x50", "500x500")
+
     return {
         "id":        album.get("id", ""),
         "name":      html.unescape(album.get("name", "")),
@@ -372,7 +408,7 @@ def slim_album(album: dict) -> dict:
 
 # ─── Language Discovery ───────────────────────────────────────────────────────
 
-def get_top_artists_by_language(languages: list = None, limit: int = 10) -> list:
+def get_top_artists_by_language(languages: list = None, limit: int = 10, quality: str = "medium") -> list:
     """Fetches top artists for a list of languages. Defaults to English/Hindi if none provided."""
     languages = languages or ["english", "hindi"]
     all_artists = []
@@ -386,7 +422,7 @@ def get_top_artists_by_language(languages: list = None, limit: int = 10) -> list
                 data = results["data"]
                 if isinstance(data, dict) and "results" in data:
                     for artist in data["results"]:
-                        slim = slim_artist(artist)
+                        slim = slim_artist(artist, quality=quality)
                         if slim["id"] not in seen_ids:
                             all_artists.append(slim)
                             seen_ids.add(slim["id"])
@@ -398,6 +434,8 @@ def get_top_artists_by_language(languages: list = None, limit: int = 10) -> list
 def get_trending_fallback(quality: str = "medium", limit: int = 10) -> list:
     """Fetch globally popular songs from Saavn search as a fallback."""
     try:
+        # Pass quality to search_songs if needed, but search_songs already returns raw, 
+        # so we slim them individually below.
         raw = search_songs("trending hits", page=1, limit=limit)
         if isinstance(raw, dict) and "data" in raw:
             data = raw["data"]

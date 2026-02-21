@@ -15,7 +15,21 @@ async def search(
     """Search for everything (songs, artists, etc.)."""
     if user:
         db_ops.record_search(user["uid"], query)
-    return search_all(query)
+    
+    results = search_all(query)
+    
+    # Slim down results based on quality
+    if isinstance(results, dict) and "data" in results:
+        data = results["data"]
+        # Results can contain songs, albums, artists
+        if "songs" in data and "results" in data["songs"]:
+            data["songs"]["results"] = [slim_song(s, quality=x_quality) for s in data["songs"]["results"]]
+        if "albums" in data and "results" in data["albums"]:
+            data["albums"]["results"] = [slim_album(a, quality=x_quality) for a in data["albums"]["results"]]
+        if "artists" in data and "results" in data["artists"]:
+            data["artists"]["results"] = [slim_artist(art, quality=x_quality) for art in data["artists"]["results"]]
+            
+    return results
 
 @router.get("/search/songs")
 async def search_for_songs(
@@ -71,7 +85,8 @@ async def search_for_songs(
 async def search_for_albums(
     query: str = Query(..., min_length=1), 
     page: int = 1, 
-    limit: int = 10
+    limit: int = 10,
+    x_quality: str = Header("medium")
 ):
     """Search for albums only."""
     results = search_albums(query, page, limit)
@@ -79,5 +94,5 @@ async def search_for_albums(
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, dict) and "results" in data:
-            data["results"] = [slim_album(a) for a in data["results"]]
+            data["results"] = [slim_album(a, quality=x_quality) for a in data["results"]]
     return results

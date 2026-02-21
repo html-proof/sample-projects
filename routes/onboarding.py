@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from middleware.auth import get_current_user
 from firebase import db_ops
 from services.saavn import get_top_artists_by_language
@@ -84,7 +84,10 @@ async def select_languages(data: LanguagesInput, user: dict = Depends(get_curren
 
 
 @router.get("/onboarding/artists")
-async def get_onboarding_artists(user: dict = Depends(get_current_user)):
+async def get_onboarding_artists(
+    user: dict = Depends(get_current_user),
+    x_quality: str = Header("medium")
+):
     """Fetches artists based on the user's selected languages.
     Results are cached in Firebase per language for instant loading."""
     languages = db_ops.get_user_languages(user["uid"])
@@ -103,7 +106,7 @@ async def get_onboarding_artists(user: dict = Depends(get_current_user)):
             all_artists.extend(cached_artists)
         else:
             # Fetch from Saavn API and cache
-            fetched = get_top_artists_by_language([lang], limit=8)
+            fetched = get_top_artists_by_language([lang], limit=8, quality=x_quality)
             if fetched:
                 db_ops.set_val(f"artists_cache/{lang_key}", fetched)
                 all_artists.extend(fetched)

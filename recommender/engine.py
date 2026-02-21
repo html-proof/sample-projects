@@ -134,10 +134,10 @@ def get_time_context() -> str:
         return "night"
 
 
-def generate_artist_recommendations(user_id: str, languages: list, followed: dict, limit: int = 10) -> list:
+def generate_artist_recommendations(user_id: str, languages: list, followed: dict, limit: int = 10, quality: str = "medium") -> list:
     """Generates personalized artist suggestions."""
     # 1. Start with top artists in preferred languages
-    artists = get_top_artists_by_language(languages, limit=limit)
+    artists = get_top_artists_by_language(languages, limit=limit, quality=quality)
     
     # 2. Filter out already followed artists if possible
     if followed:
@@ -147,7 +147,7 @@ def generate_artist_recommendations(user_id: str, languages: list, followed: dic
     return artists[:limit]
 
 
-def generate_album_recommendations(user_id: str, languages: list, fav_artists: list, limit: int = 10) -> list:
+def generate_album_recommendations(user_id: str, languages: list, fav_artists: list, limit: int = 10, quality: str = "medium") -> list:
     """Generates personalized album suggestions."""
     all_albums = []
     seen_ids = set()
@@ -158,7 +158,7 @@ def generate_album_recommendations(user_id: str, languages: list, fav_artists: l
             raw = search_albums(artist_name, limit=5)
             results = raw.get("data", {}).get("results", [])
             for alb in results:
-                slim = slim_album(alb)
+                slim = slim_album(alb, quality=quality)
                 if slim["id"] not in seen_ids:
                     # Filter by language if preferred
                     if not languages or slim["language"].lower() in [l.lower() for l in languages]:
@@ -267,8 +267,8 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20, quality: str =
                           for s in unique_recs[:limit]]
 
     # 4. Generate Artist & Album recommendations
-    artists_recs = generate_artist_recommendations(user_id, pref_langs, followed, limit=10)
-    albums_recs  = generate_album_recommendations(user_id, pref_langs, fav_artists, limit=10)
+    artists_recs = generate_artist_recommendations(user_id, pref_langs, followed, limit=10, quality=quality)
+    albums_recs  = generate_album_recommendations(user_id, pref_langs, fav_artists, limit=10, quality=quality)
 
     # 5. Trending fallback
     trending_raw = get_trending_songs(limit=20)
@@ -313,13 +313,13 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20, quality: str =
 
 # ─── Smart Shuffle Queue ──────────────────────────────────────────────────────
 
-def build_smart_queue(user_id: str, seed_song_id: str, queue_size: int = 15) -> list:
+def build_smart_queue(user_id: str, seed_song_id: str, queue_size: int = 15, quality: str = "medium") -> list:
     skipped   = set() # get_skipped_songs(user_id) - disabled for now
     history   = get_user_recently_played(user_id, limit=20)
     recent    = {sid for sid in history[:10]}
     avoid     = skipped | recent
 
-    suggestions = get_content_based(seed_song_id, avoid, limit=queue_size)
+    suggestions = get_content_based(seed_song_id, avoid, limit=queue_size, quality=quality)
 
     # Artist deduplication - avoid same artist back-to-back
     queue = []
@@ -350,7 +350,7 @@ def generate_daily_mix(user_id: str) -> list:
     seen = skipped.copy()
 
     for song_id in recent_ids:
-        suggestions = get_content_based(song_id, seen, limit=4)
+        suggestions = get_content_based(song_id, seen, limit=4, quality="medium") # Defaulting for daily mix for now
         for s in suggestions:
             seen.add(s["id"])
             mix.append(s)
@@ -362,7 +362,7 @@ def generate_daily_mix(user_id: str) -> list:
                 raw = search_songs(artist, limit=5)
                 songs = raw.get("data", {}).get("results", [])
                 for s in songs:
-                    slim = slim_song(s)
+                    slim = slim_song(s, quality="medium") # Defaulting for daily mix for now
                     if slim["id"] not in seen:
                         seen.add(slim["id"])
                         mix.append(slim)
