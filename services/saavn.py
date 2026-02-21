@@ -3,9 +3,11 @@ import json
 import urllib.parse
 from typing import Optional
 import os
+import base64
 from firebase import db_ops
 
 SAAVN_HOST = os.getenv("SAAVN_HOST", "saavn.sumit.co")
+JIOSAAVN_DES_KEY = b"38346591"  # JioSaavn's known DES key for URL decryption
 
 
 def _request(path: str) -> dict:
@@ -38,6 +40,101 @@ def search_all(query: str) -> dict:
     return results
 
 
+# ─── JioSaavn Direct API (Fallback) ──────────────────────────────────────────
+
+def _decrypt_url(encrypted_url: str) -> str:
+    """Decrypt JioSaavn's encrypted media URL using DES-ECB."""
+    try:
+        from Crypto.Cipher import DES
+        cipher = DES.new(JIOSAAVN_DES_KEY, DES.MODE_ECB)
+        encrypted_data = base64.b64decode(encrypted_url.strip())
+        decrypted = cipher.decrypt(encrypted_data)
+        return decrypted.decode("utf-8").strip("\x00\x01\x02\x03\x04\x05\x06\x07\x08")
+    except Exception as e:
+        print(f"DES decrypt error: {e}")
+        return ""
+
+
+def _search_jiosaavn_direct(query: str, limit: int = 10) -> list:
+    """Fallback: search JioSaavn's internal api.php directly."""
+    try:
+        conn = http.client.HTTPSConnection("www.jiosaavn.com", timeout=8)
+        params = urllib.parse.urlencode({
+            "__call": "search.getResults",
+            "_format": "json",
+            "_marker": "0",
+            "api_version": "3",
+            "ctx": "wap6dot0",
+            "n": str(limit),
+            "p": "1",
+            "q": query,
+        })
+        conn.request("GET", f"/api.php?{params}", headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        res = conn.getresponse()
+        raw = res.read().decode("utf-8")
+        conn.close()
+        
+        data = json.loads(raw)
+        results_list = data.get("results", [])
+        
+        songs = []
+        for item in results_list:
+            # Decrypt the encrypted media URL
+            encrypted = item.get("encrypted_media_url", "")
+            stream_url = _decrypt_url(encrypted) if encrypted else ""
+            
+            # Force 320kbps if possible
+            if stream_url and "_96." in stream_url:
+                stream_url = stream_url.replace("_96.", "_320.")
+            elif stream_url and "_160." in stream_url:
+                stream_url = stream_url.replace("_160.", "_320.")
+            
+            # Force aac.saavncdn.com CDN
+            if stream_url and "saavncdn.com" in stream_url:
+                parts = stream_url.split("saavncdn.com/", 1)
+                if len(parts) > 1:
+                    stream_url = "https://aac.saavncdn.com/" + parts[1]
+                    
+            # Build image URL
+            image = item.get("image", "")
+            if isinstance(image, str) and image:
+                image = image.replace("150x150", "500x500").replace("50x50", "500x500")
+            
+            # Get artist names
+            primary_artists = item.get("primary_artists", item.get("singers", ""))
+            
+            # Get album info
+            album_name = item.get("album", "")
+            album_id = item.get("albumid", "")
+            
+            song = {
+                "id": item.get("id", ""),
+                "name": item.get("song", item.get("title", "")),
+                "title": item.get("song", item.get("title", "")),
+                "artist": primary_artists,
+                "album": album_name,
+                "albumId": album_id,
+                "image": image,
+                "duration": int(item.get("duration", 0) or 0),
+                "language": item.get("language", ""),
+                "year": item.get("year", ""),
+                "streamUrl": stream_url,
+            }
+            
+            if song["id"] and song["name"]:
+                songs.append(song)
+        
+        if songs:
+            print(f"JioSaavn direct: found {len(songs)} songs for '{query}'")
+        return songs
+        
+    except Exception as e:
+        print(f"JioSaavn direct fallback error: {e}")
+        return []
+
 def search_songs(query: str, page: int = 1, limit: int = 20, language: str = None) -> dict:
     # 1. ALWAYS check the deep cache index first
     cache_key = f"{query}_{language}" if language else query
@@ -61,6 +158,12 @@ def search_songs(query: str, page: int = 1, limit: int = 20, language: str = Non
 
     # 2. Try Exact Query
     results = _fetch(query)
+    
+    # 2.5 Fallback: Direct JioSaavn API (if wrapper failed)
+    if not results and page == 1:
+        direct_results = _search_jiosaavn_direct(query, limit=limit)
+        if direct_results:
+            results = direct_results
     
     # 3. Fallback / Query Expansion
     if not results and page == 1:
