@@ -13,6 +13,27 @@ SAAVN_HOST = os.getenv("SAAVN_HOST", "saavn.sumit.co")
 JIOSAAVN_DES_KEY = b"38346591"  # JioSaavn's known DES key for URL decryption
 
 
+def is_url_reachable(url: str) -> bool:
+    """Check if a URL is reachable (returns 200 or 206 for media)."""
+    if not url:
+        return False
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme == "https":
+            conn = http.client.HTTPSConnection(parsed.netloc, timeout=3)
+        else:
+            conn = http.client.HTTPConnection(parsed.netloc, timeout=3)
+            
+        conn.request("HEAD", parsed.path + ("?" + parsed.query if parsed.query else ""))
+        res = conn.getresponse()
+        conn.close()
+        # 200 OK or 206 Partial Content (common for streaming)
+        return res.status in (200, 206)
+    except Exception as e:
+        print(f"URL reachability check failed for {url}: {e}")
+        return False
+
+
 def _request(path: str) -> dict:
     conn = http.client.HTTPSConnection(SAAVN_HOST)
     headers = {
@@ -232,11 +253,17 @@ def search_playlists(query: str, page: int = 1, limit: int = 10) -> dict:
 
 # ─── Songs ────────────────────────────────────────────────────────────────────
 
-def get_song(song_id: str) -> dict:
-    # Check cache first
-    cached = db_ops.song_get(song_id)
-    if cached:
-        return {"data": [cached], "source": "cache"}
+def get_song(song_id: str, refresh: bool = False) -> dict:
+    # Check cache first unless refresh is forced
+    if not refresh:
+        cached = db_ops.song_get(song_id)
+        if cached:
+            # Check if the cached URL is still reachable
+            stream_url = cached.get("streamUrl")
+            if stream_url and is_url_reachable(stream_url):
+                return {"data": [cached], "source": "cache"}
+            else:
+                print(f"Cached URL for {song_id} is dead or missing, refreshing...")
     
     results = _request(f"/api/songs/{song_id}")
     
@@ -244,7 +271,14 @@ def get_song(song_id: str) -> dict:
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, list) and len(data) > 0:
-            db_ops.song_set(song_id, data[0]) # Store raw
+            song_to_cache = data[0]
+            # Ensure the stream URL is actually valid before caching
+            stream_url = song_to_cache.get("streamUrl")
+            # If the API returned a dead link, don't pollute our cache with it
+            if stream_url and is_url_reachable(stream_url):
+                db_ops.song_set(song_id, song_to_cache)
+            else:
+                 print(f"API returned dead/invalid URL for {song_id}, skipping cache.")
             
     return results
 
@@ -383,11 +417,14 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     else:
         stream_url = ""
 
-    # Force aac.saavncdn.com CDN
+    # Force aac.saavncdn.com CDN and ensure it's not a dummy .jpg link (sometimes happens in raw data)
     if stream_url and "saavncdn.com" in stream_url:
-        parts = stream_url.split("saavncdn.com/", 1)
-        if len(parts) > 1:
-            stream_url = "https://aac.saavncdn.com/" + parts[1]
+        if stream_url.endswith(".jpg") or stream_url.endswith(".png"):
+            stream_url = "" # Invalid stream
+        else:
+            parts = stream_url.split("saavncdn.com/", 1)
+            if len(parts) > 1:
+                stream_url = "https://aac.saavncdn.com/" + parts[1]
 
     # Handle artist extraction robustly
     artist_data = song.get("artists", {})

@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header
 from services.saavn import get_artist_full_details
 
 router = APIRouter()

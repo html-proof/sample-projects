@@ -5,9 +5,9 @@ from services.lyrics import get_lyrics
 router = APIRouter()
 
 @router.get("/songs/{id}")
-async def song_details(id: str, x_quality: str = Header("medium")):
+async def song_details(id: str, refresh: bool = False, x_quality: str = Header("medium")):
     """Get details for a specific song with quality optimization."""
-    results = get_song(id)
+    results = get_song(id, refresh=refresh)
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, list) and len(data) > 0:

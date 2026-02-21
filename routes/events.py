@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from middleware.auth import get_current_user
 from firebase import db_ops
 from pydantic import BaseModel

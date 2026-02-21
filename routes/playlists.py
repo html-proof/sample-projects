@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import Header, APIRouter, Depends, Query, HTTPException
 from middleware.auth import get_current_user
 from firebase import db_ops
 from services.saavn import get_playlist as get_saavn_playlist, slim_song

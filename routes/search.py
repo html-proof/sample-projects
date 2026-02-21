@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Query, Depends, Header
+from fastapi import APIRouter, Query, Depends, Header
 from middleware.auth import optional_user
 from firebase import db_ops
 from services.saavn import search_all, search_songs, slim_song, search_albums, slim_album, get_album
