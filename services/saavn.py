@@ -1,5 +1,6 @@
 import http.client
 import json
+import html
 import urllib.parse
 from typing import Optional
 import os
@@ -112,10 +113,10 @@ def _search_jiosaavn_direct(query: str, limit: int = 10) -> list:
             
             song = {
                 "id": item.get("id", ""),
-                "name": item.get("song", item.get("title", "")),
-                "title": item.get("song", item.get("title", "")),
-                "artist": primary_artists,
-                "album": album_name,
+                "name": html.unescape(item.get("song", item.get("title", ""))),
+                "title": html.unescape(item.get("song", item.get("title", ""))),
+                "artist": html.unescape(primary_artists),
+                "album": html.unescape(album_name),
                 "albumId": album_id,
                 "image": image,
                 "duration": int(item.get("duration", 0) or 0),
@@ -328,9 +329,9 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
 
     return {
         "id":        song.get("id", ""),
-        "title":     song.get("name") or song.get("title", ""),
-        "artist":    artist_name,
-        "album":     album_name,
+        "title":     html.unescape(song.get("name") or song.get("title", "")),
+        "artist":    html.unescape(artist_name),
+        "album":     html.unescape(album_name),
         "albumId":   album_id,
         "image":     img,
         "duration":  song.get("duration", 0),
