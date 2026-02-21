@@ -38,17 +38,19 @@ def search_all(query: str) -> dict:
     return results
 
 
-def search_songs(query: str, page: int = 1, limit: int = 20) -> dict:
+def search_songs(query: str, page: int = 1, limit: int = 20, language: str = None) -> dict:
     # 1. ALWAYS check the deep cache index first
+    cache_key = f"{query}_{language}" if language else query
     if page == 1:
-        cached_results = db_ops.cache_get(query)
+        cached_results = db_ops.cache_get(cache_key)
         if cached_results:
             return {"data": {"results": cached_results}, "source": "cache"}
             
     # Helper to execute query against API
+    lang_param = f"&language={_encode(language)}" if language else ""
     def _fetch(q: str) -> list:
         try:
-            res = _request(f"/api/search/songs?query={_encode(q)}&page={page}&limit={limit}")
+            res = _request(f"/api/search/songs?query={_encode(q)}&page={page}&limit={limit}{lang_param}")
             if isinstance(res, dict) and "data" in res:
                 data = res["data"]
                 if isinstance(data, dict) and "results" in data:
@@ -81,7 +83,7 @@ def search_songs(query: str, page: int = 1, limit: int = 20) -> dict:
 
     # 4. Deep Cache Store
     if page == 1 and results:
-        db_ops.cache_set(query, results)
+        db_ops.cache_set(cache_key, results)
         
     return {
         "success": True,

@@ -8,6 +8,7 @@ router = APIRouter()
 @router.get("/search")
 async def search(
     query: str = Query(..., min_length=1), 
+    language: str = Query(None),
     user: dict = Depends(optional_user),
     x_quality: str = Header("medium")
 ):
@@ -21,11 +22,12 @@ async def search_for_songs(
     query: str = Query(..., min_length=1), 
     page: int = 1, 
     limit: int = 20,
+    language: str = Query(None),
     x_quality: str = Header("medium")
 ):
     """Search for songs only with quality optimization.
     Also returns the full album of the top result as a recommendation."""
-    results = search_songs(query, page, limit)
+    results = search_songs(query, page, limit, language=language)
     
     recommended_album = None
     
