@@ -157,16 +157,17 @@ def search_songs(query: str, page: int = 1, limit: int = 20, language: str = Non
             pass
         return []
 
-    # 2. Try Exact Query
-    results = _fetch(query)
-    
-    # 2.5 Fallback: Direct JioSaavn API (if wrapper failed)
-    if not results and page == 1:
+    # 2. Try Direct JioSaavn API first (Official internal API, most reliable)
+    if page == 1:
         direct_results = _search_jiosaavn_direct(query, limit=limit)
         if direct_results:
             results = direct_results
+
+    # 3. Fallback: Try the unofficial API wrapper if direct failed or for pagination
+    if not results or page > 1:
+        results = _fetch(query)
     
-    # 3. Fallback / Query Expansion
+    # 4. Fallback / Query Expansion (if everything else failed)
     if not results and page == 1:
         parts = query.split()
         if len(parts) > 1:
@@ -346,7 +347,7 @@ def slim_artist(artist: dict) -> dict:
     img = image[-1].get("url", "") if image else ""
     return {
         "id":       artist.get("id", ""),
-        "name":     artist.get("name", ""),
+        "name":     html.unescape(artist.get("name", "")),
         "image":    img,
         "follower": artist.get("followerCount", 0),
         "url":      artist.get("url", ""),
@@ -361,9 +362,9 @@ def slim_album(album: dict) -> dict:
     
     return {
         "id":        album.get("id", ""),
-        "name":      album.get("name", ""),
+        "name":      html.unescape(album.get("name", "")),
         "image":     img,
-        "artist":    artist_name,
+        "artist":    html.unescape(artist_name),
         "language":  album.get("language", ""),
         "year":      album.get("year", ""),
     }
