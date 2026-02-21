@@ -141,6 +141,12 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     else:
         stream_url = downloads[2].get("url", "") if len(downloads) > 2 else (downloads[-1].get("url", "") if downloads else "")
 
+    # Force aac.saavncdn.com CDN
+    if stream_url and "saavncdn.com" in stream_url:
+        parts = stream_url.split("saavncdn.com/", 1)
+        if len(parts) > 1:
+            stream_url = "https://aac.saavncdn.com/" + parts[1]
+
     return {
         "id":        song.get("id", ""),
         "title":     song.get("name", ""),
