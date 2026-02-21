@@ -26,9 +26,6 @@ async def search_for_songs(
     """Search for songs only with quality optimization."""
     results = search_songs(query, page, limit)
     
-    if results.get("source") == "cache":
-        return results
-    
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, dict) and "results" in data:

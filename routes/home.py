@@ -43,7 +43,7 @@ async def home_feed(user: Optional[dict] = Depends(optional_user), x_quality: st
     for sid in recent_ids:
         sdata = song_get(sid)
         if sdata:
-            recent_songs.append(sdata)
+            recent_songs.append(slim_song(sdata, quality=x_quality))
         
     # 3. Popular Artists - Use selected languages or defaults
     popular_artists = get_top_artists_by_language(languages, limit=5)

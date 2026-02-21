@@ -78,11 +78,11 @@ def get_song(song_id: str) -> dict:
     
     results = _request(f"/api/songs/{song_id}")
     
-    # Store in metadata cache
+    # Store in metadata cache - STORE RAW DATA for maximum flexibility
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, list) and len(data) > 0:
-            db_ops.song_set(song_id, slim_song(data[0]))
+            db_ops.song_set(song_id, data[0]) # Store raw
             
     return results
 
@@ -123,23 +123,38 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     """Return minimal song data for mobile-friendly responses.
     quality: 'low', 'medium', 'high'
     """
-    images = song.get("image", [])
-    # Low: smallest image, High: largest image
-    if quality == "low":
-        img = images[0].get("url", "") if images else ""
-    elif quality == "high":
-        img = images[-1].get("url", "") if images else ""
+    # If already slimmed, return as is (idempotency)
+    if "title" in song and "imageUrl" not in song and "image" in song and isinstance(song["image"], str):
+        return song
+
+    image_data = song.get("image")
+    # Handle if it's already a flat string or a list of maps
+    if isinstance(image_data, list) and image_data:
+        # Low: smallest image, High: largest image
+        if quality == "low":
+            img = image_data[0].get("url", "") if image_data else ""
+        elif quality == "high":
+            img = image_data[-1].get("url", "") if image_data else ""
+        else:
+            img = image_data[1].get("url", "") if len(image_data) > 1 else (image_data[0].get("url", "") if image_data else "")
+    elif isinstance(image_data, str):
+        img = image_data
     else:
-        img = images[1].get("url", "") if len(images) > 1 else (images[0].get("url", "") if images else "")
+        img = ""
 
     downloads = song.get("downloadUrl", [])
-    # bitrates: 0=12kbps, 1=48kbps, 2=96kbps, 3=160kbps, 4=320kbps (approx)
-    if quality == "low":
-        stream_url = downloads[1].get("url", "") if len(downloads) > 1 else (downloads[0].get("url", "") if downloads else "")
-    elif quality == "high":
-        stream_url = downloads[-1].get("url", "") if downloads else ""
+    if isinstance(downloads, list) and downloads:
+        # bitrates: 0=12kbps, 1=48kbps, 2=96kbps, 3=160kbps, 4=320kbps (approx)
+        if quality == "low":
+            stream_url = downloads[1].get("url", "") if len(downloads) > 1 else (downloads[0].get("url", "") if downloads else "")
+        elif quality == "high":
+            stream_url = downloads[-1].get("url", "") if downloads else ""
+        else:
+            stream_url = downloads[2].get("url", "") if len(downloads) > 2 else (downloads[-1].get("url", "") if downloads else "")
+    elif isinstance(song.get("streamUrl"), str):
+        stream_url = song.get("streamUrl", "")
     else:
-        stream_url = downloads[2].get("url", "") if len(downloads) > 2 else (downloads[-1].get("url", "") if downloads else "")
+        stream_url = ""
 
     # Force aac.saavncdn.com CDN
     if stream_url and "saavncdn.com" in stream_url:
@@ -147,11 +162,20 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
         if len(parts) > 1:
             stream_url = "https://aac.saavncdn.com/" + parts[1]
 
+    # Handle artist extraction robustly
+    artist_data = song.get("artists", {})
+    if isinstance(artist_data, dict) and "primary" in artist_data:
+        artist_name = ", ".join(a.get("name", "") for a in artist_data.get("primary", []))
+    elif isinstance(song.get("artist"), str):
+        artist_name = song.get("artist", "")
+    else:
+        artist_name = "Unknown Artist"
+
     return {
         "id":        song.get("id", ""),
-        "title":     song.get("name", ""),
-        "artist":    ", ".join(a.get("name", "") for a in song.get("artists", {}).get("primary", [])),
-        "album":     song.get("album", {}).get("name", ""),
+        "title":     song.get("name") or song.get("title", ""),
+        "artist":    artist_name,
+        "album":     (song.get("album") if isinstance(song.get("album"), str) else song.get("album", {}).get("name", "")) or "",
         "image":     img,
         "duration":  song.get("duration", 0),
         "language":  song.get("language", ""),

@@ -109,9 +109,14 @@ def detect_favorite_artists(song_ids: list) -> list:
         # Get from cache
         song = song_get(sid)
         if song:
-            artist = song.get("artist", "")
-            if artist:
-                artist_counts[artist] += 1
+            # Handle both raw and slimmed data for favorite artist detection
+            artist_data = song.get("artists", {})
+            if isinstance(artist_data, dict) and "primary" in artist_data:
+                primary = artist_data.get("primary", [])
+                if primary:
+                    artist_counts[primary[0].get("name", "")] += 1
+            elif isinstance(song.get("artist"), str):
+                artist_counts[song.get("artist")] += 1
     return [a for a, _ in artist_counts.most_common(5)]
 
 
