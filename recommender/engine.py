@@ -129,6 +129,8 @@ def get_time_context() -> str:
         return "night"
 
 
+def generate_artist_recommendations(user_id: str, languages: list, followed: dict, limit: int = 10) -> list:
+    """Generates personalized artist suggestions."""
     # 1. Start with top artists in preferred languages
     artists = get_top_artists_by_language(languages, limit=limit)
     

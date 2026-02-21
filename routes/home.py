@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Header
+from typing import Optional
 from middleware.auth import optional_user
 from recommender.engine import get_recommendations
 from firebase.db_ops import (
@@ -10,7 +11,7 @@ from services.saavn import get_top_artists_by_language, get_song, slim_song, sea
 router = APIRouter()
 
 @router.get("/home")
-async def home_feed(user: dict = Depends(optional_user), x_quality: str = Header("medium")):
+async def home_feed(user: Optional[dict] = Depends(optional_user), x_quality: str = Header("medium")):
     """Consolidated home feed based on user preferences and activity."""
     if not user:
         # Generic feed for guest users
