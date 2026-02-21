@@ -58,6 +58,17 @@ def get_trending_songs(limit: int = 20) -> list:
     scored.sort(key=lambda x: x["score"], reverse=True)
     result = scored[:50]
     set_cached("trending", "global", result)
+    
+    # Fallback to Saavn if analytics are empty
+    if not result:
+        from services.saavn import search_songs, slim_song
+        try:
+            raw = search_songs("trending songs", limit=limit)
+            songs = raw.get("data", {}).get("results", [])
+            # Map search results to the expected trending format
+            result = [{"songId": s["id"], "score": 100, **s} for s in songs]
+        except: pass
+        
     return result[:limit]
 
 
@@ -119,14 +130,15 @@ def get_time_context() -> str:
         return "night"
 
 
-def generate_artist_recommendations(user_id: str, languages: list, followed: dict, limit: int = 10) -> list:
-    """Generates personalized artist suggestions."""
     # 1. Start with top artists in preferred languages
     artists = get_top_artists_by_language(languages, limit=limit)
     
-    # 2. Filter out already followed artists
-    followed_ids = set(followed.keys())
-    return [a for a in artists if a["id"] not in followed_ids][:limit]
+    # 2. Filter out already followed artists if possible
+    if followed:
+        followed_ids = set(followed.keys())
+        artists = [a for a in artists if a["id"] not in followed_ids]
+    
+    return artists[:limit]
 
 
 def generate_album_recommendations(user_id: str, languages: list, fav_artists: list, limit: int = 10) -> list:
@@ -254,15 +266,39 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20, quality: str =
 
     # 5. Trending fallback
     trending_raw = get_trending_songs(limit=20)
-    # Re-slim trending songs with requested quality
-    # Note: get_trending_songs returns scored objects, maybe we need to get full details and slim
-    trending_filtered = [s for s in trending_raw if s.get("language", "").lower() in pref_langs or not pref_langs]
+    
+    # If using analytics data, we might need to slim/transform
+    # If using search fallback, they are already somewhat slimmed/enriched
+    trending_final = []
+    seen_trending = set()
+    
+    for t in trending_raw:
+        tid = t.get("songId") or t.get("id")
+        if tid in seen_trending: continue
+        
+        # Determine if it's already slimmed (from search fallback) or raw (from analytics)
+        if "streamUrl" in t:
+            song = t
+        else:
+            # Need to fetch details if it's just ID+Score
+            from services.saavn import get_song
+            try:
+                raw_s = get_song(tid)
+                song = slim_song(raw_s["data"][0], quality=quality)
+            except: continue
+            
+        if pref_langs and song.get("language", "").lower() not in pref_langs:
+            continue
+            
+        trending_final.append(song)
+        seen_trending.add(tid)
+        if len(trending_final) >= 10: break
 
     return {
         "personalized":  personalized_clean,
         "artists":       artists_recs,
         "albums":        albums_recs,
-        "trending":      trending_filtered[:10],
+        "trending":      trending_final,
         "context":       time_context,
         "favoriteArtists": fav_artists,
         "updatedAt": int(time.time()),

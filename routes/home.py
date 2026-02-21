@@ -14,36 +14,19 @@ async def home_feed(user: dict = Depends(optional_user), x_quality: str = Header
     """Consolidated home feed based on user preferences and activity."""
     if not user:
         # Generic feed for guest users
-        trending_raw = get_trending("global") or []
-        # Firebase may return a dict instead of a list; normalize it
-        if isinstance(trending_raw, dict):
-            trending = list(trending_raw.values())[:10]
-        else:
-            trending = list(trending_raw)[:10]
-        # Fetch trending song details
-        songs = []
-        for tid in trending:
-            try:
-                s = get_song(tid)
-                if s.get("data"):
-                    songs.append(slim_song(s["data"][0], quality=x_quality))
-            except: continue
+        from services.saavn import get_trending_fallback, get_top_artists_by_language
+        songs = get_trending_fallback(quality=x_quality, limit=10)
+        artists = get_top_artists_by_language(limit=5)
         
-        # Fallback: if no trending data, fetch popular songs from Saavn
-        if not songs:
-            try:
-                fallback = search_songs("trending hits", page=1, limit=10)
-                if isinstance(fallback, dict) and "data" in fallback:
-                    data = fallback["data"]
-                    results = data.get("results", []) if isinstance(data, dict) else []
-                    songs = [slim_song(s, quality=x_quality) for s in results[:10]]
-            except: pass
-            
         return {
             "greeting": "Welcome to Music Streaming",
-            "personalized": [],
+            "personalized": {
+                "songs": [],
+                "artists": [],
+                "albums": []
+            },
             "trending": songs,
-            "popularArtists": [],
+            "popularArtists": artists,
             "recentlyPlayed": []
         }
     
@@ -62,15 +45,17 @@ async def home_feed(user: dict = Depends(optional_user), x_quality: str = Header
         if sdata:
             recent_songs.append(sdata)
         
-    # 3. Popular Artists in selected languages
-    popular_artists = []
-    if languages:
-        popular_artists = get_top_artists_by_language(languages, limit=5)
+    # 3. Popular Artists - Use selected languages or defaults
+    popular_artists = get_top_artists_by_language(languages, limit=5)
         
-    # 4. Trending in selected languages
-    # For now, we reuse the trending from recs which is already filtered by language
+    # 4. Trending - Use personalized trending (which now has fallbacks built-in)
     trending = recs.get("trending", [])
     
+    # Final fallback if trending is still somehow empty
+    if not trending:
+        from services.saavn import get_trending_fallback
+        trending = get_trending_fallback(quality=x_quality, limit=10)
+        
     return {
         "greeting": f"Hello, {profile.get('name', 'User')}",
         "onboardingComplete": profile.get("onboardingComplete", False),

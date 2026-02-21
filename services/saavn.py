@@ -184,11 +184,9 @@ def slim_album(album: dict) -> dict:
 
 # ─── Language Discovery ───────────────────────────────────────────────────────
 
-def get_top_artists_by_language(languages: list, limit: int = 10) -> list:
-    """Fetches top artists for a list of languages."""
-    # Since Saavn doesn't have a direct 'top artists by language' API, 
-    # we can search for 'Top {Language} Artists' or specific charts.
-    # For now, we'll use a search-based approach for each language.
+def get_top_artists_by_language(languages: list = None, limit: int = 10) -> list:
+    """Fetches top artists for a list of languages. Defaults to English/Hindi if none provided."""
+    languages = languages or ["english", "hindi"]
     all_artists = []
     seen_ids = set()
     
@@ -208,3 +206,15 @@ def get_top_artists_by_language(languages: list, limit: int = 10) -> list:
             continue
             
     return all_artists
+
+def get_trending_fallback(quality: str = "medium", limit: int = 10) -> list:
+    """Fetch globally popular songs from Saavn search as a fallback."""
+    try:
+        raw = search_songs("trending hits", page=1, limit=limit)
+        if isinstance(raw, dict) and "data" in raw:
+            data = raw["data"]
+            results = data.get("results", []) if isinstance(data, dict) else []
+            return [slim_song(s, quality=quality) for s in results[:limit]]
+    except:
+        pass
+    return []
