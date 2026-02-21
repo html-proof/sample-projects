@@ -5,7 +5,7 @@ from firebase.db_ops import (
     get_user_recently_played, get_user_profile, get_trending, 
     get_liked_songs, get_user_languages, song_get
 )
-from services.saavn import get_top_artists_by_language, get_song, slim_song, search_songs
+from services.saavn import get_top_artists_by_language, get_song, slim_song, search_songs, get_trending_fallback
 
 router = APIRouter()
 
@@ -14,7 +14,6 @@ async def home_feed(user: dict = Depends(optional_user), x_quality: str = Header
     """Consolidated home feed based on user preferences and activity."""
     if not user:
         # Generic feed for guest users
-        from services.saavn import get_trending_fallback, get_top_artists_by_language
         songs = get_trending_fallback(quality=x_quality, limit=10)
         artists = get_top_artists_by_language(limit=5)
         
@@ -53,7 +52,6 @@ async def home_feed(user: dict = Depends(optional_user), x_quality: str = Header
     
     # Final fallback if trending is still somehow empty
     if not trending:
-        from services.saavn import get_trending_fallback
         trending = get_trending_fallback(quality=x_quality, limit=10)
         
     return {

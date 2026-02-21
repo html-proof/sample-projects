@@ -24,7 +24,7 @@ from firebase.db_ops import (
 )
 from services.saavn import (
     get_song_suggestions, search_songs, search_artists, search_albums,
-    slim_song, slim_artist, slim_album, get_top_artists_by_language
+    slim_song, slim_artist, slim_album, get_top_artists_by_language, get_song
 )
 from cache.store import get_cached, set_cached
 
@@ -104,7 +104,6 @@ def get_engagement_score(song_id: str) -> float:
 # ─── Extract Favorite Artists ─────────────────────────────────────────────────
 
 def detect_favorite_artists(song_ids: list) -> list:
-    from firebase.db_ops import song_get
     artist_counts = Counter()
     for sid in song_ids:
         # Get from cache
@@ -281,7 +280,6 @@ def generate_fresh_recommendations(user_id: str, limit: int = 20, quality: str =
             song = t
         else:
             # Need to fetch details if it's just ID+Score
-            from services.saavn import get_song
             try:
                 raw_s = get_song(tid)
                 song = slim_song(raw_s["data"][0], quality=quality)
