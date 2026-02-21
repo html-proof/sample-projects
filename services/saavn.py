@@ -24,36 +24,74 @@ def _encode(q: str) -> str:
 # ─── Search ───────────────────────────────────────────────────────────────────
 
 def search_all(query: str) -> dict:
-    # Check cache first
-    cached = db_ops.cache_get(f"all_{query}")
+    # Use generic cache (not the song-specific deep cache)
+    cached = db_ops.generic_cache_get("search_all_cache", query, ttl_seconds=3600)
     if cached:
         return {"data": cached, "source": "cache"}
     
     results = _request(f"/api/search?query={_encode(query)}")
     
-    # Cache results
+    # Cache results using generic cache
     if isinstance(results, dict) and "data" in results:
-        db_ops.cache_set(f"all_{query}", results["data"])
+        db_ops.generic_cache_set("search_all_cache", query, results["data"])
         
     return results
 
 
 def search_songs(query: str, page: int = 1, limit: int = 20) -> dict:
-    # Caching only the first page for simplicity
+    # 1. ALWAYS check the deep cache index first
     if page == 1:
-        cached = db_ops.cache_get(f"songs_{query}")
-        if cached:
-            return {"data": {"results": cached}, "source": "cache"}
-    
-    results = _request(f"/api/search/songs?query={_encode(query)}&page={page}&limit={limit}")
-    
-    # Cache top results of the first page
-    if page == 1 and isinstance(results, dict) and "data" in results:
-        data = results["data"]
-        if isinstance(data, dict) and "results" in data:
-            db_ops.cache_set(f"songs_{query}", data["results"])
+        cached_results = db_ops.cache_get(query)
+        if cached_results:
+            return {"data": {"results": cached_results}, "source": "cache"}
             
-    return results
+    # Helper to execute query against API
+    def _fetch(q: str) -> list:
+        try:
+            res = _request(f"/api/search/songs?query={_encode(q)}&page={page}&limit={limit}")
+            if isinstance(res, dict) and "data" in res:
+                data = res["data"]
+                if isinstance(data, dict) and "results" in data:
+                    return data["results"]
+        except Exception:
+            pass
+        return []
+
+    # 2. Try Exact Query
+    results = _fetch(query)
+    
+    # 3. Fallback / Query Expansion
+    if not results and page == 1:
+        parts = query.split()
+        if len(parts) > 1:
+            # Strategy A: try just the first word (likely the song title)
+            results = _fetch(parts[0])
+            
+            # Strategy B: try reversed order ("imagine dragons believer" -> "believer imagine dragons")
+            if not results:
+                results = _fetch(" ".join(reversed(parts)))
+            
+            # Strategy C: try each word individually and merge
+            if not results:
+                for word in parts:
+                    if len(word) > 2:  # skip short noise words
+                        results = _fetch(word)
+                        if results:
+                            break
+
+    # 4. Deep Cache Store
+    if page == 1 and results:
+        db_ops.cache_set(query, results)
+        
+    return {
+        "success": True,
+        "data": {
+            "start": (page - 1) * limit,
+            "total": len(results),
+            "results": results
+        },
+        "_raw_results": results  # Pass raw data for album extraction in route
+    }
 
 
 def search_albums(query: str, page: int = 1, limit: int = 10) -> dict:
@@ -171,11 +209,24 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     else:
         artist_name = "Unknown Artist"
 
+    # Extract album name and ID
+    album_raw = song.get("album", {})
+    if isinstance(album_raw, dict):
+        album_name = album_raw.get("name", "")
+        album_id = album_raw.get("id", "")
+    elif isinstance(album_raw, str):
+        album_name = album_raw
+        album_id = song.get("albumId", "")
+    else:
+        album_name = ""
+        album_id = ""
+
     return {
         "id":        song.get("id", ""),
         "title":     song.get("name") or song.get("title", ""),
         "artist":    artist_name,
-        "album":     (song.get("album") if isinstance(song.get("album"), str) else song.get("album", {}).get("name", "")) or "",
+        "album":     album_name,
+        "albumId":   album_id,
         "image":     img,
         "duration":  song.get("duration", 0),
         "language":  song.get("language", ""),
@@ -248,3 +299,43 @@ def get_trending_fallback(quality: str = "medium", limit: int = 10) -> list:
     except:
         pass
     return []
+
+
+# ─── Pre-Indexing (Background Catalog Building) ──────────────────────────────
+
+def preindex_related(song_id: str):
+    """When a song is played, cache its suggestions and artist tracks.
+    This organically grows the searchable catalog over time.
+    Called in a background thread so it doesn't block playback.
+    """
+    try:
+        # 1. Cache song suggestions (related songs)
+        suggestions = get_song_suggestions(song_id, limit=10)
+        if isinstance(suggestions, dict) and "data" in suggestions:
+            for s in suggestions["data"]:
+                if isinstance(s, dict) and s.get("id"):
+                    db_ops.song_set(s["id"], s)
+
+        # 2. Get the song itself to find its artist
+        song_data = get_song(song_id)
+        if isinstance(song_data, dict) and "data" in song_data:
+            songs_list = song_data["data"]
+            if isinstance(songs_list, list) and songs_list:
+                song = songs_list[0]
+                # Extract artist IDs
+                artists = song.get("artists", {})
+                primary = artists.get("primary", []) if isinstance(artists, dict) else []
+                for artist in primary[:2]:  # Limit to first 2 artists
+                    artist_id = artist.get("id")
+                    if artist_id:
+                        # Cache their top songs
+                        artist_songs = get_artist_songs(artist_id, page=0)
+                        if isinstance(artist_songs, dict) and "data" in artist_songs:
+                            a_data = artist_songs["data"]
+                            a_songs = a_data.get("songs", []) if isinstance(a_data, dict) else []
+                            for as_item in a_songs[:10]:
+                                if isinstance(as_item, dict) and as_item.get("id"):
+                                    db_ops.song_set(as_item["id"], as_item)
+    except Exception as e:
+        print(f"Pre-indexing error (non-critical): {e}")
+

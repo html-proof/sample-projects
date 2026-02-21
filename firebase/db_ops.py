@@ -43,19 +43,47 @@ def song_set(song_id: str, metadata: dict):
 
 
 def cache_get(query: str, ttl_seconds: int = 3600) -> Optional[list]:
-    """Retrieves search results from the cache."""
+    """Retrieves search results (hydrated) from the search index cache."""
     safe_key = query.lower().strip().replace("/", "_").replace(".", "_")[:100]
-    data = get(f"search_cache/{safe_key}")
+    data = get(f"search_index/{safe_key}")
+    
     if data and (time.time() - data.get("timestamp", 0)) < ttl_seconds:
-        return data.get("results")
+        song_ids = data.get("song_ids", [])
+        if not song_ids:
+            return []
+            
+        # Rehydrate results from deep song metadata cache
+        results = []
+        for sid in song_ids:
+            song_meta = get(f"songs/{sid}")
+            if song_meta:
+                results.append(song_meta)
+        
+        # Only return if we actually recovered songs
+        if results:
+            return results
+            
     return None
 
+def normalize_query(q: str) -> str:
+    """Helper to convert queries to a safe dictionary key format."""
+    return q.lower().strip().replace("/", "_").replace(".", "_")[:100]
 
 def cache_set(query: str, results: list):
-    """Caches search results."""
-    safe_key = query.lower().strip().replace("/", "_").replace(".", "_")[:100]
-    set_val(f"search_cache/{safe_key}", {
-        "results": results[:20],  # Store top 20 results as recommended
+    """Caches search results by indexing song IDs and storing metadata deeply."""
+    safe_key = normalize_query(query)
+    song_ids = []
+    
+    # Store the actual deep metadata
+    for song in results[:20]:  # Limit to top 20
+        sid = song.get("id")
+        if sid:
+            song_ids.append(sid)
+            song_set(sid, song)  # Uses existing deep cache logic
+            
+    # Update search index
+    set_val(f"search_index/{safe_key}", {
+        "song_ids": song_ids,
         "timestamp": time.time()
     })
 

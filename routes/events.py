@@ -2,6 +2,8 @@
 from middleware.auth import get_current_user
 from firebase import db_ops
 from pydantic import BaseModel
+import threading
+from services.saavn import preindex_related
 
 router = APIRouter()
 
@@ -14,6 +16,8 @@ async def record_event(event: Event, user: dict = Depends(get_current_user)):
     """Records user events like play, like, or click."""
     if event.type == "play":
         db_ops.record_play(user["uid"], event.id)
+        # Background pre-index related songs to grow the catalog
+        threading.Thread(target=preindex_related, args=(event.id,), daemon=True).start()
         return {"status": "success", "event": "play recorded"}
     elif event.type == "like":
         db_ops.record_like(user["uid"], event.id)
