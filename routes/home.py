@@ -5,7 +5,7 @@ from firebase.db_ops import (
     get_user_recently_played, get_user_profile, get_trending, 
     get_liked_songs, get_user_languages, song_get
 )
-from services.saavn import get_top_artists_by_language, get_song
+from services.saavn import get_top_artists_by_language, get_song, slim_song, search_songs
 
 router = APIRouter()
 
@@ -20,19 +20,30 @@ async def home_feed(user: dict = Depends(optional_user)):
             trending = list(trending_raw.values())[:10]
         else:
             trending = list(trending_raw)[:10]
-        # Fetch some generic trending songs if list is empty
+        # Fetch trending song details
         songs = []
         for tid in trending:
             try:
                 s = get_song(tid)
                 if s.get("data"):
-                    songs.append(s["data"][0])
+                    songs.append(slim_song(s["data"][0]))
             except: continue
+        
+        # Fallback: if no trending data, fetch popular songs from Saavn
+        if not songs:
+            try:
+                fallback = search_songs("trending hits", page=1, limit=10)
+                if isinstance(fallback, dict) and "data" in fallback:
+                    data = fallback["data"]
+                    results = data.get("results", []) if isinstance(data, dict) else []
+                    songs = [slim_song(s) for s in results[:10]]
+            except: pass
             
         return {
             "greeting": "Welcome to Music Streaming",
             "personalized": [],
             "trending": songs,
+            "popularArtists": [],
             "recentlyPlayed": []
         }
     
