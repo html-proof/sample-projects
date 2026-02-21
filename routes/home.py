@@ -15,7 +15,7 @@ async def home_feed(user: Optional[dict] = Depends(optional_user), x_quality: st
     """Consolidated home feed based on user preferences and activity."""
     if not user:
         # Generic feed for guest users
-        songs = get_trending_fallback(quality=x_quality, limit=10)
+        songs = [s for s in get_trending_fallback(quality=x_quality, limit=10) if s.get('streamUrl')]
         artists = get_top_artists_by_language(limit=5)
         
         return {
@@ -53,7 +53,9 @@ async def home_feed(user: Optional[dict] = Depends(optional_user), x_quality: st
     
     # Final fallback if trending is still somehow empty
     if not trending:
-        trending = get_trending_fallback(quality=x_quality, limit=10)
+        trending = [s for s in get_trending_fallback(quality=x_quality, limit=10) if s.get('streamUrl')]
+    else:
+        trending = [s for s in trending if s.get('streamUrl')]
         
     return {
         "greeting": f"Hello, {profile.get('name', 'User')}",
@@ -65,6 +67,6 @@ async def home_feed(user: Optional[dict] = Depends(optional_user), x_quality: st
         },
         "trending": trending,
         "popularArtists": popular_artists,
-        "recentlyPlayed": recent_songs,
+        "recentlyPlayed": [s for s in recent_songs if s.get('streamUrl')],
         "context": recs.get("context", "anytime")
     }

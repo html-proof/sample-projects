@@ -48,7 +48,7 @@ async def search_for_songs(
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, dict) and "results" in data:
-            data["results"] = [slim_song(s, quality=x_quality) for s in data["results"]]
+            data["results"] = [s for s in [slim_song(s, quality=x_quality) for s in data["results"]] if s.get("streamUrl")]
             
             # Extract album from the TOP result for recommendation
             if page == 1 and data["results"]:
