@@ -258,9 +258,15 @@ def get_song(song_id: str, refresh: bool = False) -> dict:
     if not refresh:
         cached = db_ops.song_get(song_id)
         if cached:
-            # Check if the cached URL is still reachable
+            # Check if the cached URL is still reachable and marked verified
             stream_url = cached.get("streamUrl")
-            if stream_url and is_url_reachable(stream_url):
+            is_verified = cached.get("verified", False)
+            
+            if stream_url and (is_verified or is_url_reachable(stream_url)):
+                # If it wasn't marked verified but is reachable, mark it now
+                if not is_verified:
+                    cached["verified"] = True
+                    db_ops.song_set(song_id, cached)
                 return {"data": [cached], "source": "cache"}
             else:
                 print(f"Cached URL for {song_id} is dead or missing, refreshing...")
@@ -276,6 +282,7 @@ def get_song(song_id: str, refresh: bool = False) -> dict:
             stream_url = song_to_cache.get("streamUrl")
             # If the API returned a dead link, don't pollute our cache with it
             if stream_url and is_url_reachable(stream_url):
+                song_to_cache["verified"] = True
                 db_ops.song_set(song_id, song_to_cache)
             else:
                  print(f"API returned dead/invalid URL for {song_id}, skipping cache.")
@@ -458,6 +465,7 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
         "language":  song.get("language", ""),
         "year":      song.get("year", ""),
         "streamUrl": stream_url,
+        "verified":  song.get("verified", False)
     }
 
 
