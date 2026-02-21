@@ -5,7 +5,7 @@ from firebase.db_ops import (
     get_user_recently_played, get_user_profile, get_trending, 
     get_liked_songs, get_user_languages, song_get
 )
-from services.saavn import get_top_artists_by_language
+from services.saavn import get_top_artists_by_language, get_song
 
 router = APIRouter()
 
@@ -14,10 +14,15 @@ async def home_feed(user: dict = Depends(optional_user)):
     """Consolidated home feed based on user preferences and activity."""
     if not user:
         # Generic feed for guest users
-        trending = get_trending("global") or []
+        trending_raw = get_trending("global") or []
+        # Firebase may return a dict instead of a list; normalize it
+        if isinstance(trending_raw, dict):
+            trending = list(trending_raw.values())[:10]
+        else:
+            trending = list(trending_raw)[:10]
         # Fetch some generic trending songs if list is empty
         songs = []
-        for tid in trending[:10]:
+        for tid in trending:
             try:
                 s = get_song(tid)
                 if s.get("data"):
