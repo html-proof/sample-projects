@@ -44,9 +44,11 @@ async def search_unified(
     # Merge local results into songs (unique IDs)
     if local_songs:
         existing_ids = {s["id"] for s in songs}
-        for ls in local_songs:
-            if ls["id"] not in existing_ids:
-                songs.insert(0, ls) # Prioritize local results at the top
+        # Slim local results too! They are stored raw in the database.
+        slimmed_local = [s for s in [slim_song(ls, quality=x_quality) for ls in filter_clean(local_songs)] if s.get("id")]
+        for sls in slimmed_local:
+            if sls["id"] not in existing_ids:
+                songs.insert(0, sls) # Prioritize local results at the top
 
     # ── Albums ──
     albums = []
