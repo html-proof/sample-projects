@@ -3,6 +3,7 @@ import json
 import html
 import urllib.parse
 from typing import Optional
+import re
 import os
 import base64
 import gzip
@@ -58,6 +59,26 @@ def _request(path: str) -> dict:
 
 def _encode(q: str) -> str:
     return urllib.parse.quote(q)
+
+
+# ─── Content Filtering ───────────────────────────────────────────────────────
+
+_BLOCKED_KEYWORDS = re.compile(
+    r'\b(remix|8d|16d|slowed|reverb|lofi|lo-fi|mashup|news|debate|shorts|karaoke|instrumental|cover\sversion)\b',
+    re.IGNORECASE
+)
+
+def _is_clean_result(title: str) -> bool:
+    """Return True if the title does NOT contain blocked keywords."""
+    if not title:
+        return True
+    return not _BLOCKED_KEYWORDS.search(title)
+
+def filter_clean(results: list) -> list:
+    """Filter a list of song/album dicts, keeping only clean results."""
+    return [r for r in results if _is_clean_result(
+        r.get("name", "") or r.get("title", "")
+    )]
 
 
 # ─── Search ───────────────────────────────────────────────────────────────────

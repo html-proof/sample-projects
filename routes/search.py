@@ -1,9 +1,79 @@
 from fastapi import APIRouter, Query, Depends, Header
 from middleware.auth import optional_user
 from firebase import db_ops
-from services.saavn import search_all, search_songs, slim_song, search_albums, slim_album, get_album
+from services.saavn import (
+    search_all, search_songs, slim_song, search_albums, slim_album,
+    search_artists, slim_artist, get_album, filter_clean
+)
 
 router = APIRouter()
+
+
+# ─── Spotify-Style Unified Search ─────────────────────────────────────────────
+
+@router.get("/search/all")
+async def search_unified(
+    query: str = Query(..., min_length=1),
+    language: str = Query(None),
+    user: dict = Depends(optional_user),
+    x_quality: str = Header("medium")
+):
+    """Spotify-style unified search returning categorized results.
+    Returns topResult, songs, albums, and artists in one response."""
+    if user:
+        db_ops.record_search(user["uid"], query)
+
+    # Fetch songs, albums, and artists
+    song_res = search_songs(query, page=1, limit=20, language=language)
+    album_res = search_albums(query, page=1, limit=10)
+    artist_res = search_artists(query, page=1, limit=10)
+
+    # ── Songs ──
+    songs = []
+    if isinstance(song_res, dict) and "data" in song_res:
+        data = song_res["data"]
+        raw = data.get("results", []) if isinstance(data, dict) else []
+        songs = [s for s in [slim_song(s, quality=x_quality) for s in filter_clean(raw)] if s.get("streamUrl")]
+
+    # ── Albums ──
+    albums = []
+    if isinstance(album_res, dict) and "data" in album_res:
+        data = album_res["data"]
+        raw = data.get("results", []) if isinstance(data, dict) else []
+        albums = [slim_album(a, quality=x_quality) for a in filter_clean(raw)]
+
+    # ── Artists ──
+    artists = []
+    if isinstance(artist_res, dict) and "data" in artist_res:
+        data = artist_res["data"]
+        raw = data.get("results", []) if isinstance(data, dict) else []
+        artists = [slim_artist(a, quality=x_quality) for a in raw]
+
+    # ── Top Result ── (best song match)
+    top_result = None
+    if songs:
+        top = songs[0]
+        top_result = {**top, "type": "song"}
+    elif albums:
+        top = albums[0]
+        top_result = {**top, "type": "album"}
+    elif artists:
+        top = artists[0]
+        top_result = {**top, "type": "artist"}
+
+    return {
+        "success": True,
+        "topResult": top_result,
+        "songs": songs[:6],
+        "albums": albums[:6],
+        "artists": artists[:6],
+        "totalSongs": len(songs),
+        "totalAlbums": len(albums),
+        "totalArtists": len(artists),
+    }
+
+
+# ─── Original Endpoints ──────────────────────────────────────────────────────
 
 @router.get("/search")
 async def search(
@@ -21,7 +91,6 @@ async def search(
     # Slim down results based on quality
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
-        # Results can contain songs, albums, artists
         if "songs" in data and "results" in data["songs"]:
             data["songs"]["results"] = [slim_song(s, quality=x_quality) for s in data["songs"]["results"]]
         if "albums" in data and "results" in data["albums"]:
@@ -48,7 +117,7 @@ async def search_for_songs(
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, dict) and "results" in data:
-            data["results"] = [s for s in [slim_song(s, quality=x_quality) for s in data["results"]] if s.get("streamUrl")]
+            data["results"] = [s for s in [slim_song(s, quality=x_quality) for s in filter_clean(data["results"])] if s.get("streamUrl")]
             
             # Extract album from the TOP result for recommendation
             if page == 1 and data["results"]:
@@ -94,5 +163,5 @@ async def search_for_albums(
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, dict) and "results" in data:
-            data["results"] = [slim_album(a, quality=x_quality) for a in data["results"]]
+            data["results"] = [slim_album(a, quality=x_quality) for a in filter_clean(data["results"])]
     return results
