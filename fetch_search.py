@@ -3,7 +3,7 @@ import json
 import urllib.parse
 
 query = urllib.parse.quote("chotta mumabi malayalam song")
-url = f"https://sample-projects-production.up.railway.app/api/search/songs?query={query}&page=1&limit=20"
+url = f"https://music-type-production.up.railway.app/api/search/songs?query={query}&page=1&limit=20"
 
 try:
     req = urllib.request.Request(url, headers={'x-quality': 'medium'})
