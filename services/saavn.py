@@ -198,6 +198,8 @@ def _search_jiosaavn_direct(query: str, limit: int = 10) -> list:
 def search_songs(query: str, page: int = 1, limit: int = 20, language: str = None) -> dict:
     # 1. ALWAYS check the deep cache index first
     cache_key = f"{query}_{language}" if language else query
+    results = [] # Initialize results variable
+    
     if page == 1:
         cached_results = db_ops.cache_get(cache_key)
         if cached_results:
