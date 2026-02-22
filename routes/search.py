@@ -39,7 +39,7 @@ async def search_unified(
     if isinstance(song_res, dict) and "data" in song_res:
         data = song_res["data"]
         raw = data.get("results", []) if isinstance(data, dict) else []
-        songs = [s for s in [slim_song(s, quality=x_quality) for s in filter_clean(raw)] if s.get("streamUrl")]
+        songs = [slim_song(s, quality=x_quality) for s in filter_clean(raw)]
 
     # Merge local results into songs (unique IDs)
     if local_songs:
@@ -130,7 +130,7 @@ async def search_for_songs(
     if isinstance(results, dict) and "data" in results:
         data = results["data"]
         if isinstance(data, dict) and "results" in data:
-            data["results"] = [s for s in [slim_song(s, quality=x_quality) for s in filter_clean(data["results"])] if s.get("streamUrl")]
+            data["results"] = [slim_song(s, quality=x_quality) for s in filter_clean(data["results"])]
             
             # Extract album from the TOP result for recommendation
             if page == 1 and data["results"]:

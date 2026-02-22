@@ -413,13 +413,8 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     image_data = song.get("image")
     # Handle if it's already a flat string or a list of maps
     if isinstance(image_data, list) and image_data:
-        # Low: smallest image, High: largest image
-        if quality == "low":
-            img = image_data[0].get("url", "") if image_data else ""
-        elif quality == "high":
-            img = image_data[-1].get("url", "") if image_data else ""
-        else:
-            img = image_data[1].get("url", "") if len(image_data) > 1 else (image_data[0].get("url", "") if image_data else "")
+        # User Advice: Always take the last item for best quality
+        img = image_data[-1].get("url", "") if image_data else ""
     elif isinstance(image_data, str):
         img = image_data
     else:
@@ -433,19 +428,15 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
 
     downloads = song.get("downloadUrl", [])
     if isinstance(downloads, list) and downloads:
-        # bitrates: 0=12kbps, 1=48kbps, 2=96kbps, 3=160kbps, 4=320kbps (approx)
-        if quality == "low":
-            stream_url = downloads[1].get("url", "") if len(downloads) > 1 else (downloads[0].get("url", "") if downloads else "")
-        elif quality == "high":
-            stream_url = downloads[-1].get("url", "") if downloads else ""
-        else:
-            stream_url = downloads[2].get("url", "") if len(downloads) > 2 else (downloads[-1].get("url", "") if downloads else "")
+        # User Advice: Always take the last item for best audio quality
+        # downloads usually contains [12kbps, 48kbps, 96kbps, 160kbps, 320kbps]
+        stream_url = downloads[-1].get("url", "") if downloads else ""
     elif isinstance(song.get("streamUrl"), str):
         stream_url = song.get("streamUrl", "")
     else:
         stream_url = ""
 
-    # Force aac.saavncdn.com CDN and ensure it's not a dummy .jpg link (sometimes happens in raw data)
+    # Force aac.saavncdn.com CDN and ensure it's not a dummy .jpg link
     if stream_url and "saavncdn.com" in stream_url:
         if stream_url.endswith(".jpg") or stream_url.endswith(".png"):
             stream_url = "" # Invalid stream
@@ -454,14 +445,20 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
             if len(parts) > 1:
                 stream_url = "https://aac.saavncdn.com/" + parts[1]
 
-    # Handle artist extraction robustly
+    # Handle artist extraction robustly (bridging search vs details)
     artist_data = song.get("artists", {})
+    primary_artists = []
+    
     if isinstance(artist_data, dict) and "primary" in artist_data:
-        artist_name = ", ".join(a.get("name", "") for a in artist_data.get("primary", []))
+        primary_artists = [a.get("name", "") for a in artist_data.get("primary", [])]
+    elif isinstance(song.get("primaryArtists"), str):
+        primary_artists = [song.get("primaryArtists")]
+    elif isinstance(song.get("singers"), str):
+        primary_artists = [song.get("singers")]
     elif isinstance(song.get("artist"), str):
-        artist_name = song.get("artist", "")
-    else:
-        artist_name = "Unknown Artist"
+        primary_artists = [song.get("artist")]
+        
+    artist_name = ", ".join([a for a in primary_artists if a]) or "Unknown Artist"
 
     # Extract album name and ID
     album_raw = song.get("album", {})
