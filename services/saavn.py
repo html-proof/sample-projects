@@ -36,25 +36,32 @@ def is_url_reachable(url: str) -> bool:
 
 
 def _request(path: str) -> dict:
-    conn = http.client.HTTPSConnection(SAAVN_HOST)
-    headers = {
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip"
-    }
-    conn.request("GET", path, headers=headers)
-    res = conn.getresponse()
-    
-    encoding = res.getheader("Content-Encoding")
-    raw_data = res.read()
-    
-    if encoding == "gzip":
-        with gzip.GzipFile(fileobj=io.BytesIO(raw_data)) as f:
-            data = f.read().decode("utf-8")
-    else:
-        data = raw_data.decode("utf-8")
+    try:
+        conn = http.client.HTTPSConnection(SAAVN_HOST, timeout=10)
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip"
+        }
+        conn.request("GET", path, headers=headers)
+        res = conn.getresponse()
         
-    conn.close()
-    return json.loads(data)
+        encoding = res.getheader("Content-Encoding")
+        raw_data = res.read()
+        
+        if encoding == "gzip":
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(raw_data)) as f:
+                    data = f.read().decode("utf-8")
+            except Exception:
+                data = raw_data.decode("utf-8")
+        else:
+            data = raw_data.decode("utf-8")
+            
+        conn.close()
+        return json.loads(data)
+    except Exception as e:
+        print(f"Saavn API Error [{path}]: {e}")
+        return {}
 
 
 def _encode(q: str) -> str:

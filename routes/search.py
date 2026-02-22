@@ -30,9 +30,23 @@ async def search_unified(
     # For now, if we have local results, we we prioritize them but still fetch other categories
     
     # Fetch songs, albums, and artists from API (cached if possible by saavn.py)
-    song_res = search_songs(query, page=1, limit=20, language=language)
-    album_res = search_albums(query, page=1, limit=10)
-    artist_res = search_artists(query, page=1, limit=10)
+    try:
+        song_res = search_songs(query, page=1, limit=20, language=language)
+    except Exception as e:
+        print(f"Error in search_unified (songs): {e}")
+        song_res = {}
+
+    try:
+        album_res = search_albums(query, page=1, limit=10)
+    except Exception as e:
+        print(f"Error in search_unified (albums): {e}")
+        album_res = {}
+
+    try:
+        artist_res = search_artists(query, page=1, limit=10)
+    except Exception as e:
+        print(f"Error in search_unified (artists): {e}")
+        artist_res = {}
 
     # ── Songs ──
     songs = []
