@@ -430,13 +430,16 @@ def slim_song(song: dict, quality: str = "medium") -> dict:
     elif img and (quality == "medium" or quality == "high"):
         img = img.replace("150x150", "500x500")
 
-    downloads = song.get("downloadUrl", [])
+    # Support both camelCase and snake_case for download URLs
+    downloads = song.get("downloadUrl", []) or song.get("download_url", [])
     if isinstance(downloads, list) and downloads:
         # User Advice: Always take the last item for best audio quality
         # downloads usually contains [12kbps, 48kbps, 96kbps, 160kbps, 320kbps]
         stream_url = downloads[-1].get("url", "") if downloads else ""
     elif isinstance(song.get("streamUrl"), str):
         stream_url = song.get("streamUrl", "")
+    elif isinstance(song.get("stream_url"), str):
+        stream_url = song.get("stream_url", "")
     else:
         stream_url = ""
 
