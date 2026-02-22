@@ -23,7 +23,13 @@ async def search_unified(
     if user:
         db_ops.record_search(user["uid"], query)
 
-    # Fetch songs, albums, and artists
+    # 1. TRY LOCAL INDEX FIRST (Instant)
+    local_songs = db_ops.search_local_index(query, limit=10)
+    
+    # 2. IF LOCAL RESULTS FOUND, USE THEM (Can still complement with API results in background if needed)
+    # For now, if we have local results, we we prioritize them but still fetch other categories
+    
+    # Fetch songs, albums, and artists from API (cached if possible by saavn.py)
     song_res = search_songs(query, page=1, limit=20, language=language)
     album_res = search_albums(query, page=1, limit=10)
     artist_res = search_artists(query, page=1, limit=10)
@@ -34,6 +40,13 @@ async def search_unified(
         data = song_res["data"]
         raw = data.get("results", []) if isinstance(data, dict) else []
         songs = [s for s in [slim_song(s, quality=x_quality) for s in filter_clean(raw)] if s.get("streamUrl")]
+
+    # Merge local results into songs (unique IDs)
+    if local_songs:
+        existing_ids = {s["id"] for s in songs}
+        for ls in local_songs:
+            if ls["id"] not in existing_ids:
+                songs.insert(0, ls) # Prioritize local results at the top
 
     # ── Albums ──
     albums = []
@@ -64,7 +77,7 @@ async def search_unified(
     return {
         "success": True,
         "topResult": top_result,
-        "songs": songs[:6],
+        "songs": songs[:10],
         "albums": albums[:6],
         "artists": artists[:6],
         "totalSongs": len(songs),

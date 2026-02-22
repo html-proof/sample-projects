@@ -1,12 +1,66 @@
 from firebase_admin import db
 from typing import Any, Optional
 import time
+import re
 
 
 # ─── Generic Helpers ──────────────────────────────────────────────────────────
 
 def ref(path: str):
     return db.reference(path)
+
+
+# ─── Search Indexing (Spotify-Level Speed) ───────────────────────────────────
+
+def generate_prefixes(text: str) -> list:
+    """Break text into searchable prefixes (e.g. 'arijit' -> ['a', 'ar', 'ari'...])."""
+    if not text:
+        return []
+    # Normalize: lowercase, remove special chars, split into words
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text.lower())
+    words = text.split()
+    prefixes = set()
+    for word in words:
+        for i in range(1, len(word) + 1):
+            prefixes.add(word[:i])
+    # Also index the whole phrase prefixes
+    phrase = "".join(words)
+    for i in range(1, len(phrase) + 1):
+        prefixes.add(phrase[:i])
+    return list(prefixes)
+
+
+def index_song_for_search(song_id: str, title: str, artist: str):
+    """Adds a song ID to the prefix-based search index."""
+    title_prefixes = generate_prefixes(title)
+    artist_prefixes = generate_prefixes(artist)
+    all_prefixes = set(title_prefixes + artist_prefixes)
+    
+    # We use a batch update or individual sets. For RTDB, we append song IDs to nodes.
+    # To keep it efficient, we store as: prefix_index/{prefix}/{song_id} = True
+    for p in all_prefixes:
+        if len(p) < 2: continue # Skip single letters to avoid massive index nodes
+        ref(f"prefix_index/{p}/{song_id}").set(True)
+
+
+def search_local_index(query: str, limit: int = 10) -> list:
+    """Instantly searches the local prefix_index in Firebase."""
+    safe_prefix = re.sub(r'[^a-zA-Z0-9]', '', query.lower().strip())
+    if not safe_prefix:
+        return []
+    
+    # Get song IDs for this prefix
+    data = get(f"prefix_index/{safe_prefix}")
+    if not data or not isinstance(data, dict):
+        return []
+        
+    song_ids = list(data.keys())[:limit]
+    results = []
+    for sid in song_ids:
+        song_meta = song_get(sid)
+        if song_meta:
+            results.append(song_meta)
+    return results
 
 
 def get(path: str) -> Optional[Any]:
@@ -86,6 +140,14 @@ def cache_set(query: str, results: list):
         "song_ids": song_ids,
         "timestamp": time.time()
     })
+    
+    # Index individual songs for instant prefix search
+    for song in results:
+        index_song_for_search(
+            song.get("id"), 
+            song.get("title") or song.get("name"), 
+            song.get("artist")
+        )
 
 
 # ─── Generic Caching ──────────────────────────────────────────────────────────
