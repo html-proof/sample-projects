@@ -221,10 +221,12 @@ def search_songs(query: str, page: int = 1, limit: int = 20, language: str = Non
     # 2. Try Direct JioSaavn API first (Official internal API, most reliable)
     if page == 1:
         direct_results = _search_jiosaavn_direct(query, limit=limit)
-        if direct_results:
+        # Only use direct results if they actually contain playable URLs
+        # (This prevents using results that failed to decrypt when Crypto is missing)
+        if direct_results and any(s.get("streamUrl") for s in direct_results[:5]):
             results = direct_results
 
-    # 3. Fallback: Try the unofficial API wrapper if direct failed or for pagination
+    # 3. Fallback: Try the unofficial API wrapper if direct failed, returned no URLs, or for pagination
     if not results or page > 1:
         results = _fetch(query)
     
